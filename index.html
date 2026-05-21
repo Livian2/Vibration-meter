@@ -105,11 +105,8 @@
     // 2. Continuous Accelerometer Listener
     function startListening() {
         window.addEventListener('devicemotion', (event) => {
-            let acc = event.acceleration;
-            // Fallback for devices that only provide acceleration with gravity
-            if (!acc || acc.x === null) {
-                acc = event.accelerationIncludingGravity;
-            }
+            // Force the app to ALWAYS include gravity
+            let acc = event.accelerationIncludingGravity;
             
             if (acc) {
                 latestMotion = {
