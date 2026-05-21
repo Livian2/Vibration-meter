@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Accelerometer Tracker</title>
+    <title>Continuous Accelerometer</title>
     <style>
-        :root { --bg: #f2f2f7; --card: #ffffff; --text: #000000; --secondary: #8e8e93; --blue: #007aff; --red: #ff3b30; --yellow: #ffd60a; }
+        :root { --bg: #f2f2f7; --card: #ffffff; --text: #000000; --secondary: #8e8e93; --blue: #007aff; --red: #ff3b30; --green: #34c759; }
         @media (prefers-color-scheme: dark) { :root { --bg: #000000; --card: #1c1c1e; --text: #ffffff; --secondary: #aeaeb2; } }
         
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 16px; padding-bottom: 50px; }
@@ -20,12 +20,9 @@
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-group { display: flex; gap: 10px; margin-top: 10px; }
         
-        .schedule-item { display: flex; justify-content: space-between; padding: 12px 8px; border-bottom: 1px solid var(--secondary); font-size: 1.1em; }
-        .schedule-item:last-child { border-bottom: none; }
-        .schedule-item.active-row { background-color: rgba(255, 214, 10, 0.3); border-radius: 8px; font-weight: bold; }
-        .direction { color: var(--secondary); font-size: 0.9em; font-weight: normal; }
-        
         #permission-banner { background-color: #ff9500; color: white; padding: 16px; border-radius: 12px; margin-bottom: 16px; text-align: center; }
+        
+        .info-text { color: var(--secondary); font-size: 0.95em; line-height: 1.4; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -41,7 +38,7 @@
             <div id="status-indicator" class="indicator"></div>
             <span id="status-text">Waiting for schedule...</span>
         </div>
-        <div style="color: var(--secondary); font-size: 0.9em;">
+        <div style="color: var(--secondary); font-size: 0.9em; font-weight: bold; margin-bottom: 15px;">
             Data points in memory: <span id="data-count">0</span>
         </div>
         
@@ -51,8 +48,17 @@
         </div>
     </div>
 
-    <div class="card" id="schedule-container">
-        </div>
+    <div class="card">
+        <h3>Recording Schedule</h3>
+        <p class="info-text">
+            <strong>Start Time:</strong> 05:35<br>
+            <strong>End Time:</strong> 23:50<br>
+            <strong>Frequency:</strong> 10 times per second (10Hz)
+        </p>
+        <p class="info-text">
+            Keep this page open and your phone plugged in. The app will automatically start and stop recording between these hours.
+        </p>
+    </div>
 
 <script>
     // System Variables
@@ -61,50 +67,6 @@
     let latestMotion = { x: 0, y: 0, z: 0 };
     let recordingInterval = null;
     let wakeLock = null;
-
-    // Extracted Schedule
-    const rawSchedule = [
-        { time: "05:40", dir: "Leiden" }, { time: "06:10", dir: "Leiden" }, { time: "06:38", dir: "Leiden" }, { time: "07:06", dir: "Leiden" },
-        { time: "07:21", dir: "Leiden" }, { time: "07:36", dir: "Leiden" }, { time: "07:51", dir: "Leiden" }, { time: "08:06", dir: "Leiden" },
-        { time: "08:21", dir: "Leiden" }, { time: "08:36", dir: "Leiden" }, { time: "08:51", dir: "Leiden" }, { time: "09:06", dir: "Leiden" },
-        { time: "09:21", dir: "Leiden" }, { time: "09:36", dir: "Leiden" }, { time: "09:51", dir: "Leiden" }, { time: "10:06", dir: "Leiden" },
-        { time: "10:21", dir: "Leiden" }, { time: "10:36", dir: "Leiden" }, { time: "10:51", dir: "Leiden" }, { time: "11:06", dir: "Leiden" },
-        { time: "11:21", dir: "Leiden" }, { time: "11:36", dir: "Leiden" }, { time: "11:51", dir: "Leiden" }, { time: "12:06", dir: "Leiden" },
-        { time: "12:21", dir: "Leiden" }, { time: "12:36", dir: "Leiden" }, { time: "12:51", dir: "Leiden" }, { time: "13:06", dir: "Leiden" },
-        { time: "13:21", dir: "Leiden" }, { time: "13:36", dir: "Leiden" }, { time: "13:51", dir: "Leiden" }, { time: "14:06", dir: "Leiden" },
-        { time: "14:21", dir: "Leiden" }, { time: "14:36", dir: "Leiden" }, { time: "14:51", dir: "Leiden" }, { time: "15:06", dir: "Leiden" },
-        { time: "15:21", dir: "Leiden" }, { time: "15:36", dir: "Leiden" }, { time: "15:51", dir: "Leiden" }, { time: "16:06", dir: "Leiden" },
-        { time: "16:21", dir: "Leiden" }, { time: "16:36", dir: "Leiden" }, { time: "16:51", dir: "Leiden" }, { time: "17:08", dir: "Leiden" },
-        { time: "17:23", dir: "Leiden" }, { time: "17:38", dir: "Leiden" }, { time: "18:15", dir: "Leiden" }, { time: "18:45", dir: "Leiden" },
-        { time: "19:16", dir: "Leiden" }, { time: "19:46", dir: "Leiden" }, { time: "20:16", dir: "Leiden" }, { time: "20:46", dir: "Leiden" },
-        { time: "21:16", dir: "Leiden" }, { time: "21:46", dir: "Leiden" }, { time: "22:16", dir: "Leiden" }, { time: "22:46", dir: "Leiden" },
-        { time: "23:16", dir: "Leiden" }, { time: "23:46", dir: "Leiden" },
-        { time: "06:01", dir: "Haarlem" }, { time: "06:31", dir: "Haarlem" }, { time: "07:02", dir: "Haarlem" }, { time: "07:34", dir: "Haarlem" },
-        { time: "07:49", dir: "Haarlem" }, { time: "08:04", dir: "Haarlem" }, { time: "08:19", dir: "Haarlem" }, { time: "08:34", dir: "Haarlem" },
-        { time: "08:49", dir: "Haarlem" }, { time: "09:04", dir: "Haarlem" }, { time: "09:19", dir: "Haarlem" }, { time: "09:34", dir: "Haarlem" },
-        { time: "09:49", dir: "Haarlem" }, { time: "10:04", dir: "Haarlem" }, { time: "10:19", dir: "Haarlem" }, { time: "10:34", dir: "Haarlem" },
-        { time: "10:49", dir: "Haarlem" }, { time: "11:04", dir: "Haarlem" }, { time: "11:19", dir: "Haarlem" }, { time: "11:34", dir: "Haarlem" },
-        { time: "11:49", dir: "Haarlem" }, { time: "12:04", dir: "Haarlem" }, { time: "12:19", dir: "Haarlem" }, { time: "12:34", dir: "Haarlem" },
-        { time: "12:49", dir: "Haarlem" }, { time: "13:04", dir: "Haarlem" }, { time: "13:19", dir: "Haarlem" }, { time: "13:34", dir: "Haarlem" },
-        { time: "13:49", dir: "Haarlem" }, { time: "14:04", dir: "Haarlem" }, { time: "14:19", dir: "Haarlem" }, { time: "14:34", dir: "Haarlem" },
-        { time: "14:49", dir: "Haarlem" }, { time: "15:04", dir: "Haarlem" }, { time: "15:19", dir: "Haarlem" }, { time: "15:34", dir: "Haarlem" },
-        { time: "15:49", dir: "Haarlem" }, { time: "16:04", dir: "Haarlem" }, { time: "16:19", dir: "Haarlem" }, { time: "16:34", dir: "Haarlem" },
-        { time: "16:49", dir: "Haarlem" }, { time: "17:04", dir: "Haarlem" }, { time: "17:19", dir: "Haarlem" }, { time: "17:34", dir: "Haarlem" },
-        { time: "17:49", dir: "Haarlem" }, { time: "18:04", dir: "Haarlem" }, { time: "18:19", dir: "Haarlem" }, { time: "18:41", dir: "Haarlem" },
-        { time: "19:09", dir: "Haarlem" }, { time: "19:39", dir: "Haarlem" }, { time: "20:10", dir: "Haarlem" }, { time: "20:39", dir: "Haarlem" },
-        { time: "21:09", dir: "Haarlem" }, { time: "21:39", dir: "Haarlem" }, { time: "22:09", dir: "Haarlem" }, { time: "22:39", dir: "Haarlem" },
-        { time: "23:09", dir: "Haarlem" }, { time: "23:39", dir: "Haarlem" }, { time: "00:09", dir: "Haarlem" }
-    ].sort((a, b) => a.time.localeCompare(b.time));
-
-    // Render Schedule to DOM
-    const container = document.getElementById('schedule-container');
-    rawSchedule.forEach((item, index) => {
-        const div = document.createElement('div');
-        div.className = 'schedule-item';
-        div.id = 'row-' + index;
-        div.innerHTML = `<span>${item.time}</span> <span class="direction">Richting ${item.dir}</span>`;
-        container.appendChild(div);
-    });
 
     // 1. Permissions & Setup
     function requestAccess() {
@@ -143,8 +105,8 @@
     // 2. Continuous Accelerometer Listener
     function startListening() {
         window.addEventListener('devicemotion', (event) => {
-            // Some devices only provide acceleration with gravity, so we use a fallback
             let acc = event.acceleration;
+            // Fallback for devices that only provide acceleration with gravity
             if (!acc || acc.x === null) {
                 acc = event.accelerationIncludingGravity;
             }
@@ -159,36 +121,27 @@
         });
     }
 
-    // 3. Logic to check time windows
-    function isTimeActive(scheduledTimeStr, now) {
-        const [hours, minutes] = scheduledTimeStr.split(':').map(Number);
+    // 3. Logic to check the single large time window
+    function isWithinRecordingWindow(now) {
+        const hours = now.getHours();
+        const minutes = now.getMinutes();
         
-        let target = new Date(now);
-        target.setHours(hours, minutes, 0, 0);
-
-        // Handle the "00:09" case for the next day correctly
-        if (hours === 0 && now.getHours() > 20) {
-            target.setDate(target.getDate() + 1);
-        }
-
-        const diffMinutes = (now - target) / (1000 * 60);
-        return diffMinutes >= -3 && diffMinutes <= 3;
+        // Convert current time to total minutes since midnight
+        const timeInMinutes = (hours * 60) + minutes;
+        
+        // 05:35 = (5 * 60) + 35 = 335 minutes
+        const startTime = 335; 
+        
+        // 23:50 = (23 * 60) + 50 = 1430 minutes
+        const endTime = 1430;
+        
+        return timeInMinutes >= startTime && timeInMinutes <= endTime;
     }
 
     // 4. Main Loop - Checks Schedule every 1 second
     setInterval(() => {
         const now = new Date();
-        let shouldRecord = false;
-
-        rawSchedule.forEach((item, index) => {
-            const rowElement = document.getElementById('row-' + index);
-            if (isTimeActive(item.time, now)) {
-                shouldRecord = true;
-                rowElement.classList.add('active-row');
-            } else {
-                rowElement.classList.remove('active-row');
-            }
-        });
+        const shouldRecord = isWithinRecordingWindow(now);
 
         if (shouldRecord && !isRecording) {
             startRecording();
@@ -201,9 +154,9 @@
     function startRecording() {
         isRecording = true;
         document.getElementById('status-indicator').classList.add('active');
-        document.getElementById('status-text').innerText = "Recording Accelerometer...";
+        document.getElementById('status-text').innerText = "Recording Accelerometer (10Hz)...";
         
-        // Record 5 times a second (every 200ms)
+        // Record 10 times a second (every 100ms)
         recordingInterval = setInterval(() => {
             recordedData.push({
                 timestamp: new Date().toISOString(),
@@ -212,19 +165,19 @@
                 z: latestMotion.z
             });
             updateUI();
-        }, 200);
+        }, 100);
     }
 
     function stopRecording() {
         isRecording = false;
         document.getElementById('status-indicator').classList.remove('active');
-        document.getElementById('status-text').innerText = "Waiting for schedule...";
+        document.getElementById('status-text').innerText = "Sleeping (Outside 05:35 - 23:50 window)";
         clearInterval(recordingInterval);
     }
 
     // 6. Data Management
     function updateUI() {
-        document.getElementById('data-count').innerText = recordedData.length;
+        document.getElementById('data-count').innerText = recordedData.length.toLocaleString(); // Added commas for large numbers
         const hasData = recordedData.length > 0;
         document.getElementById('export-btn').disabled = !hasData;
         document.getElementById('clear-btn').disabled = !hasData;
@@ -238,21 +191,31 @@
     }
 
     function exportCSV() {
+        // Since the string can get massive, we build it efficiently
         let csvContent = "Timestamp,X_Acceleration,Y_Acceleration,Z_Acceleration\n";
         
-        recordedData.forEach(row => {
-            csvContent += `${row.timestamp},${row.x},${row.y},${row.z}\n`;
-        });
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
+        // Temporarily change button text so user knows it's working
+        document.getElementById('export-btn').innerText = "Generating CSV (Please wait)...";
         
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `AccelData_${Date.now()}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        // Use setTimeout to allow the UI to update the button text before blocking the thread
+        setTimeout(() => {
+            recordedData.forEach(row => {
+                csvContent += `${row.timestamp},${row.x},${row.y},${row.z}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Continuous_Accel_${Date.now()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Reset button text
+            document.getElementById('export-btn').innerText = "Export CSV";
+        }, 100);
     }
 </script>
 </body>
