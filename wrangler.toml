@@ -16,4 +16,4 @@ compatibility_date = "2024-09-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "vibration-meter-db"
-database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
+database_id = "fdfa0d81-3850-4483-b78e-e1ea5a340eac"
