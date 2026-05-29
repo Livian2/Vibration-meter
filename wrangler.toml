@@ -1,0 +1,19 @@
+# ─── SETUP (run these once) ─────────────────────────────────────────────────
+# 1. npm install -g wrangler
+# 2. npx wrangler login
+# 3. npx wrangler d1 create vibration-meter-db
+#    → paste the returned database_id below
+# 4. npx wrangler d1 execute vibration-meter-db --file=schema.sql
+# 5. npx wrangler secret put API_KEY          (pick any secret string)
+# 6. npx wrangler deploy
+#    → copy the printed Worker URL into WORKER_URL in index.html
+# ────────────────────────────────────────────────────────────────────────────
+
+name = "vibration-meter-worker"
+main = "worker/index.js"
+compatibility_date = "2024-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vibration-meter-db"
+database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
