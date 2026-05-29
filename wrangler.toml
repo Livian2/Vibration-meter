@@ -9,7 +9,7 @@
 #    → copy the printed Worker URL into WORKER_URL in index.html
 # ────────────────────────────────────────────────────────────────────────────
 
-name = "vibration-meter-worker"
+name = "vibration-meter"
 main = "worker/index.js"
 compatibility_date = "2024-09-01"
 
