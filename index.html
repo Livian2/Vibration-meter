@@ -17,14 +17,14 @@
 
         button { border: none; border-radius: 8px; padding: 12px 16px; font-size: 16px; font-weight: 600; color: white; cursor: pointer; width: 100%; margin-bottom: 8px; }
         .btn-primary { background-color: var(--blue); }
-        .btn-danger { background-color: var(--red); }
+        .btn-danger  { background-color: var(--red); }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-group { display: flex; gap: 10px; margin-top: 10px; }
 
         #permission-banner { background-color: #ff9500; color: white; padding: 16px; border-radius: 12px; margin-bottom: 16px; text-align: center; }
 
-        .info-text { color: var(--secondary); font-size: 0.95em; line-height: 1.6; margin-top: 10px; }
-        .stat-row { display: flex; justify-content: space-between; font-size: 0.9em; color: var(--secondary); margin-bottom: 4px; }
+        .info-text  { color: var(--secondary); font-size: 0.95em; line-height: 1.6; margin-top: 10px; }
+        .stat-row   { display: flex; justify-content: space-between; font-size: 0.9em; color: var(--secondary); margin-bottom: 4px; }
         .sync-status { font-size: 0.88em; color: var(--secondary); margin-top: 10px; line-height: 1.5; }
     </style>
 </head>
@@ -41,17 +41,12 @@
             <div id="status-indicator" class="indicator"></div>
             <span id="status-text">Waiting for schedule...</span>
         </div>
-        <div class="stat-row">
-            <span>Local data points:</span>
-            <span id="data-count">0</span>
-        </div>
-        <div class="stat-row">
-            <span>Device sample rate:</span>
-            <span id="device-rate">detecting...</span>
-        </div>
+        <div class="stat-row"><span>Local data points:</span>  <span id="data-count">0</span></div>
+        <div class="stat-row"><span>Native sensor rate:</span> <span id="device-rate">detecting…</span></div>
+        <div class="stat-row"><span>Output rate:</span>        <span id="output-rate">—</span></div>
         <div class="btn-group">
             <button id="export-btn" class="btn-primary" onclick="exportCSV()" disabled>Export CSV</button>
-            <button id="clear-btn" class="btn-danger" onclick="clearData()" disabled>Clear Data</button>
+            <button id="clear-btn"  class="btn-danger"  onclick="clearData()"  disabled>Clear Data</button>
         </div>
     </div>
 
@@ -60,10 +55,7 @@
             <div id="sync-indicator" class="indicator"></div>
             <span>Cloud Sync (Cloudflare D1)</span>
         </div>
-        <div class="stat-row">
-            <span>Pending upload:</span>
-            <span id="pending-count">0 points</span>
-        </div>
+        <div class="stat-row"><span>Pending upload:</span><span id="pending-count">0 points</span></div>
         <div id="sync-status" class="sync-status">Waiting for next flush window...</div>
     </div>
 
@@ -71,8 +63,9 @@
         <h3>Recording Schedule</h3>
         <p class="info-text">
             <strong>Window:</strong> 05:35 – 23:50<br>
-            <strong>Local rate:</strong> 10 Hz (every 100 ms)<br>
-            <strong>Anti-alias filter:</strong> IIR low-pass at 20 Hz (applied to raw sensor)<br>
+            <strong>Native sample rate:</strong> up to 500 Hz (device-dependent)<br>
+            <strong>Anti-alias filter:</strong> IIR low-pass at 35 Hz — attenuates content that would alias below the 40 Hz Nyquist<br>
+            <strong>Output stored:</strong> 80 Hz<br>
             <strong>Cloud sync:</strong> 5 × /day at 09:14, 12:53, 16:32, 20:11, 23:50 (2 Hz, ~200 MB/month)
         </p>
         <p class="info-text">Keep this page open and your phone plugged in.</p>
@@ -80,33 +73,41 @@
 
 <script>
     // ── CONFIG ── fill these in after deploying your Cloudflare Worker ──────
-    const WORKER_URL       = 'https://YOUR_WORKER.YOUR_SUBDOMAIN.workers.dev';
-    const API_KEY          = 'YOUR_SECRET_API_KEY';
-    const LPF_CUTOFF_HZ    = 20;   // digital low-pass cutoff (Hz) — removes aliasing above this
-    const CLOUD_SAMPLE_EVERY = 5;  // store every 5th local sample in cloud (2 Hz); lower = more storage
+    const WORKER_URL         = 'https://YOUR_WORKER.YOUR_SUBDOMAIN.workers.dev';
+    const API_KEY            = 'YOUR_SECRET_API_KEY';
+
+    const NATIVE_TARGET_HZ   = 500; // requested raw sample rate (actual rate is hardware-limited)
+    const OUTPUT_RATE_HZ     = 80;  // Hz stored to memory / local CSV
+    const LPF_CUTOFF_HZ      = 35;  // anti-alias cutoff — removes energy that folds back below 40 Hz Nyquist
+    const CLOUD_SAMPLE_EVERY = 40;  // keep every 40th output sample for cloud → 2 Hz, ~200 MB/month
     // ────────────────────────────────────────────────────────────────────────
 
-    // Flush schedule: recording window 05:35–23:50 (1095 min) split into 5 equal chunks (219 min each)
-    // Flush times in minutes since midnight: 09:14, 12:53, 16:32, 20:11, 23:50
+    // Flush schedule: 05:35–23:50 window (1095 min) ÷ 5 = 219 min each
+    // flush times in minutes since midnight → 09:14, 12:53, 16:32, 20:11, 23:50
     const FLUSH_TIMES = [554, 773, 992, 1211, 1430];
 
     // ── State ────────────────────────────────────────────────────────────────
-    let isRecording       = false;
-    let recordedData      = [];
-    let pendingCloudData  = [];
-    let latestMotion      = { x: 0, y: 0, z: 0 };
-    let recordingInterval = null;
-    let wakeLock          = null;
-    let isSyncing         = false;
-    let cloudSampleCount  = 0;
-    let sentFlushes       = {}; // { 'YYYY-MM-DD': Set<flushIndex> }
+    let isRecording      = false;
+    let recordedData     = [];
+    let pendingCloudData = [];
+    let cloudSampleCount = 0;
+    let wakeLock         = null;
+    let isSyncing        = false;
+    let sentFlushes      = {}; // { 'YYYY-MM-DD': Set<flushIndex> }
 
-    // ── Anti-alias filter state ───────────────────────────────────────────────
-    // Single-pole IIR low-pass:  y[n] = α·x[n] + (1−α)·y[n-1]
-    // α is recomputed whenever we detect the actual device sample rate from event.interval
+    // ── Anti-alias filter (single-pole IIR low-pass) ─────────────────────────
+    // Applied to every raw native-rate sample before the output time-gate.
+    // y[n] = α·x[n] + (1−α)·y[n−1]   α = dt/(dt + RC)   RC = 1/(2π·fc)
     let deviceSampleRate = 100;
-    let lpfAlpha         = computeAlpha(LPF_CUTOFF_HZ, deviceSampleRate);
+    let lpfAlpha         = computeAlpha(LPF_CUTOFF_HZ, 100);
     let lpfState         = { x: 0, y: 0, z: 0 };
+
+    // ── Output time-gate ──────────────────────────────────────────────────────
+    const STORE_INTERVAL_MS = 1000 / OUTPUT_RATE_HZ; // 12.5 ms
+    let nextStoreTime    = 0;
+
+    // Rolling rate measurement (last 100 event timestamps)
+    const rateBuffer = [];
 
     function computeAlpha(cutoffHz, sampleRateHz) {
         const dt = 1 / sampleRateHz;
@@ -114,139 +115,181 @@
         return dt / (dt + rc);
     }
 
-    // Mark already-elapsed flush times on page load so we don't send empty batches
+    // Mark flush times that have already passed today — avoids sending an empty first batch
     (function initFlushTracking() {
-        const now          = new Date();
-        const dateKey      = now.toISOString().slice(0, 10);
-        const nowMinutes   = now.getHours() * 60 + now.getMinutes();
+        const now     = new Date();
+        const dateKey = now.toISOString().slice(0, 10);
+        const t       = now.getHours() * 60 + now.getMinutes();
         sentFlushes[dateKey] = new Set();
-        FLUSH_TIMES.forEach((t, i) => { if (nowMinutes > t) sentFlushes[dateKey].add(i + 1); });
+        FLUSH_TIMES.forEach((ft, i) => { if (t > ft) sentFlushes[dateKey].add(i + 1); });
     })();
 
-    // ── 1. Permissions & setup ────────────────────────────────────────────────
-    function requestAccess() {
-        if (typeof DeviceMotionEvent.requestPermission === 'function') {
-            DeviceMotionEvent.requestPermission()
-                .then(state => {
-                    if (state === 'granted') { setup(); }
-                    else { alert('Permission denied. Cannot record accelerometer data.'); }
-                })
-                .catch(console.error);
-        } else {
-            setup();
+    // ── 1. Permissions ────────────────────────────────────────────────────────
+    async function requestAccess() {
+        // iOS 13+ requires a user-gesture promise before DeviceMotionEvent fires
+        if (typeof DeviceMotionEvent !== 'undefined' &&
+            typeof DeviceMotionEvent.requestPermission === 'function') {
+            try {
+                const state = await DeviceMotionEvent.requestPermission();
+                if (state !== 'granted') {
+                    alert('Permission denied. Cannot record accelerometer data.');
+                    return;
+                }
+            } catch (e) { console.error(e); return; }
         }
-    }
-
-    function setup() {
-        startListening();
         document.getElementById('permission-banner').style.display = 'none';
         requestWakeLock();
+        startListening();
     }
 
     async function requestWakeLock() {
         try {
             if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
-        } catch (err) {
-            console.log(`Wake Lock: ${err.name} — ${err.message}`);
-        }
+        } catch (e) { console.log(`Wake Lock: ${e.name} — ${e.message}`); }
     }
 
-    // ── 2. Accelerometer listener with IIR low-pass filter ────────────────────
-    // Sampling at the device's native rate and filtering digitally at LPF_CUTOFF_HZ
-    // avoids aliasing from energy above the Nyquist of our 10 Hz storage rate.
+    // ── 2. Sensor listener ────────────────────────────────────────────────────
+    // Try the Generic Sensor API first (Chrome / Android) — supports requesting
+    // up to NATIVE_TARGET_HZ. Fall back to DeviceMotionEvent (iOS Safari).
     function startListening() {
+        if (window.Accelerometer) {
+            try {
+                const sensor = new Accelerometer({ frequency: NATIVE_TARGET_HZ });
+                sensor.addEventListener('reading', () => {
+                    onSensorReading(sensor.x ?? 0, sensor.y ?? 0, sensor.z ?? 0);
+                });
+                sensor.addEventListener('error', () => {
+                    console.warn('Generic Sensor failed — falling back to DeviceMotionEvent');
+                    startDeviceMotionListener();
+                });
+                sensor.start();
+                document.getElementById('device-rate').innerText = `requesting ${NATIVE_TARGET_HZ} Hz…`;
+                return;
+            } catch (e) {
+                console.warn('Generic Sensor unavailable:', e.message);
+            }
+        }
+        startDeviceMotionListener();
+    }
+
+    function startDeviceMotionListener() {
         window.addEventListener('devicemotion', (event) => {
             const acc = event.accelerationIncludingGravity;
             if (!acc) return;
-
-            // Recalibrate filter alpha if device reports a different sample rate
+            // Seed alpha from the event's own interval report (iOS exposes this)
             if (event.interval > 0) {
-                const rate = Math.round(1000 / event.interval);
-                if (Math.abs(rate - deviceSampleRate) > 5) {
-                    deviceSampleRate = rate;
-                    lpfAlpha         = computeAlpha(LPF_CUTOFF_HZ, deviceSampleRate);
-                    document.getElementById('device-rate').innerText = `${deviceSampleRate} Hz (native)`;
+                const r = Math.round(1000 / event.interval);
+                if (r !== deviceSampleRate) {
+                    deviceSampleRate = r;
+                    lpfAlpha = computeAlpha(LPF_CUTOFF_HZ, deviceSampleRate);
                 }
             }
-
-            // Apply IIR low-pass filter to every raw sample
-            const a   = lpfAlpha;
-            lpfState.x = a * (acc.x || 0) + (1 - a) * lpfState.x;
-            lpfState.y = a * (acc.y || 0) + (1 - a) * lpfState.y;
-            lpfState.z = a * (acc.z || 0) + (1 - a) * lpfState.z;
-
-            latestMotion = { x: lpfState.x, y: lpfState.y, z: lpfState.z };
+            onSensorReading(acc.x ?? 0, acc.y ?? 0, acc.z ?? 0);
         });
     }
 
-    // ── 3. Recording window check ─────────────────────────────────────────────
+    // ── 3. Core: filter every raw sample, time-gate output to OUTPUT_RATE_HZ ──
+    function onSensorReading(rawX, rawY, rawZ) {
+        const now = Date.now();
+
+        // Update actual measured rate using a rolling window of the last 100 events.
+        // This works for both APIs and self-corrects if the hardware rate changes.
+        rateBuffer.push(now);
+        if (rateBuffer.length > 100) rateBuffer.shift();
+        if (rateBuffer.length > 10) {
+            const span    = rateBuffer[rateBuffer.length - 1] - rateBuffer[0];
+            const newRate = Math.round((rateBuffer.length - 1) / span * 1000);
+            if (newRate > 0 && Math.abs(newRate - deviceSampleRate) > 15) {
+                deviceSampleRate = newRate;
+                lpfAlpha         = computeAlpha(LPF_CUTOFF_HZ, deviceSampleRate);
+                document.getElementById('device-rate').innerText = `~${newRate} Hz (native)`;
+            }
+        }
+
+        // IIR low-pass filter applied to every native-rate sample.
+        // This is the anti-aliasing step: energy above LPF_CUTOFF_HZ is attenuated
+        // here, so when we downsample to OUTPUT_RATE_HZ it cannot fold back
+        // into the band of interest.
+        const a    = lpfAlpha;
+        lpfState.x = a * rawX + (1 - a) * lpfState.x;
+        lpfState.y = a * rawY + (1 - a) * lpfState.y;
+        lpfState.z = a * rawZ + (1 - a) * lpfState.z;
+
+        if (!isRecording) return;
+
+        // Time-gate: emit at most one output sample per STORE_INTERVAL_MS (12.5 ms = 80 Hz).
+        // If the native rate is lower than 80 Hz the actual output rate will match native.
+        if (now < nextStoreTime) return;
+        nextStoreTime += STORE_INTERVAL_MS;
+        // Prevent runaway catchup after the tab is backgrounded / paused
+        if (nextStoreTime < now - STORE_INTERVAL_MS) nextStoreTime = now;
+
+        const point = {
+            timestamp: new Date(now).toISOString(),
+            x: lpfState.x,
+            y: lpfState.y,
+            z: lpfState.z,
+        };
+        recordedData.push(point);
+
+        // Cloud buffer: keep only every CLOUD_SAMPLE_EVERY-th output sample (→ 2 Hz)
+        cloudSampleCount++;
+        if (cloudSampleCount % CLOUD_SAMPLE_EVERY === 0) pendingCloudData.push(point);
+
+        // Throttle UI refresh to ~1 Hz
+        if (recordedData.length % OUTPUT_RATE_HZ === 0) updateUI();
+    }
+
+    // ── 4. Recording window check ─────────────────────────────────────────────
     function isWithinRecordingWindow(now) {
         const t = now.getHours() * 60 + now.getMinutes();
         return t >= 335 && t <= 1430; // 05:35–23:50
     }
 
-    // ── 4. Flush schedule check ───────────────────────────────────────────────
+    // ── 5. Flush schedule check ───────────────────────────────────────────────
     function checkFlushSchedule(now) {
         const dateKey = now.toISOString().slice(0, 10);
         if (!sentFlushes[dateKey]) sentFlushes[dateKey] = new Set();
-
         const t = now.getHours() * 60 + now.getMinutes();
-        FLUSH_TIMES.forEach((flushTime, index) => {
-            const idx = index + 1;
-            if (t >= flushTime && !sentFlushes[dateKey].has(idx) && !isSyncing) {
+        FLUSH_TIMES.forEach((ft, i) => {
+            const idx = i + 1;
+            if (t >= ft && !sentFlushes[dateKey].has(idx) && !isSyncing) {
                 sentFlushes[dateKey].add(idx);
                 flushDataToCloud(idx, dateKey);
             }
         });
     }
 
-    // ── 5. Main loop ──────────────────────────────────────────────────────────
+    // ── 6. Main 1-second loop (schedule checks only — data comes from sensor) ─
     setInterval(() => {
         const now = new Date();
         checkFlushSchedule(now);
-
         const shouldRecord = isWithinRecordingWindow(now);
-        if (shouldRecord && !isRecording)       startRecording();
-        else if (!shouldRecord && isRecording)  stopRecording();
+        if (shouldRecord && !isRecording)      startRecording();
+        else if (!shouldRecord && isRecording) stopRecording();
     }, 1000);
 
-    // ── 6. Recording actions ──────────────────────────────────────────────────
+    // ── 7. Recording state transitions ────────────────────────────────────────
     function startRecording() {
-        isRecording = true;
+        isRecording   = true;
+        nextStoreTime = Date.now(); // allow the very next sensor event to be stored
         document.getElementById('status-indicator').classList.add('active');
-        document.getElementById('status-text').innerText = 'Recording (10 Hz, IIR filtered)...';
-
-        recordingInterval = setInterval(() => {
-            const point = {
-                timestamp: new Date().toISOString(),
-                x: latestMotion.x,
-                y: latestMotion.y,
-                z: latestMotion.z,
-            };
-            recordedData.push(point);
-
-            cloudSampleCount++;
-            if (cloudSampleCount % CLOUD_SAMPLE_EVERY === 0) {
-                pendingCloudData.push(point);
-            }
-
-            updateUI();
-        }, 100);
+        document.getElementById('status-text').innerText = `Recording (${OUTPUT_RATE_HZ} Hz output)…`;
+        document.getElementById('output-rate').innerText  = `${OUTPUT_RATE_HZ} Hz`;
     }
 
     function stopRecording() {
         isRecording = false;
         document.getElementById('status-indicator').classList.remove('active');
         document.getElementById('status-text').innerText = 'Sleeping (outside 05:35–23:50 window)';
-        clearInterval(recordingInterval);
+        updateUI();
     }
 
-    // ── 7. Cloud sync ─────────────────────────────────────────────────────────
+    // ── 8. Cloud sync ─────────────────────────────────────────────────────────
     async function flushDataToCloud(flushIndex, date) {
         const dataToSend = pendingCloudData.splice(0); // atomic snapshot
         if (dataToSend.length === 0) {
-            document.getElementById('sync-status').innerText =
-                `Flush ${flushIndex}/5: nothing to send.`;
+            document.getElementById('sync-status').innerText = `Flush ${flushIndex}/5: nothing to send.`;
             return;
         }
 
@@ -255,7 +298,7 @@
         document.getElementById('sync-status').innerText =
             `Syncing flush ${flushIndex}/5… (${dataToSend.length.toLocaleString()} points)`;
 
-        // Send as plain CSV — avoids large JSON.parse on the Worker, stays within free CPU limits
+        // Plain CSV body — avoids large JSON.parse on the Worker, within free CPU limit
         const csv    = dataToSend.map(r => `${r.timestamp},${r.x},${r.y},${r.z}`).join('\n');
         const params = new URLSearchParams({ flushIndex, date, count: dataToSend.length });
 
@@ -265,16 +308,13 @@
                 headers: { 'Content-Type': 'text/plain', 'Authorization': `Bearer ${API_KEY}` },
                 body: csv,
             });
-
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
             const result = await res.json();
             document.getElementById('sync-indicator').classList.add('synced');
             document.getElementById('sync-status').innerText =
                 `Last sync: flush ${flushIndex}/5 at ${new Date().toLocaleTimeString()} — ${result.stored.toLocaleString()} points saved`;
         } catch (err) {
-            // Restore data so the next flush retries
-            pendingCloudData = [...dataToSend, ...pendingCloudData];
+            pendingCloudData = [...dataToSend, ...pendingCloudData]; // restore for retry
             sentFlushes[date].delete(flushIndex);
             document.getElementById('sync-status').innerText =
                 `Sync failed (flush ${flushIndex}/5): ${err.message} — will retry at next window`;
@@ -284,7 +324,7 @@
         }
     }
 
-    // ── 8. Data management ────────────────────────────────────────────────────
+    // ── 9. Data management ────────────────────────────────────────────────────
     function updateUI() {
         document.getElementById('data-count').innerText    = recordedData.length.toLocaleString();
         document.getElementById('pending-count').innerText = `${pendingCloudData.length.toLocaleString()} points`;
@@ -305,10 +345,8 @@
     function exportCSV() {
         let csv = 'Timestamp,X_Acceleration,Y_Acceleration,Z_Acceleration\n';
         document.getElementById('export-btn').innerText = 'Generating CSV (please wait)…';
-
         setTimeout(() => {
             recordedData.forEach(r => { csv += `${r.timestamp},${r.x},${r.y},${r.z}\n`; });
-
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url  = URL.createObjectURL(blob);
             const link = document.createElement('a');
@@ -317,7 +355,6 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-
             document.getElementById('export-btn').innerText = 'Export CSV';
         }, 100);
     }
